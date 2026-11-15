@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SOLA SCRATCH</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#fff;background:#1e142c}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 80% 0%,#803c71 0%,transparent 50%),linear-gradient(145deg,#20172f,#39213e 70%,#612e55)}
+header{padding:24px 6%;font-weight:800;letter-spacing:.08em;color:#ffba8d}
+main{max-width:660px;margin:8vh auto;padding:20px;text-align:center}
+h1{font-size:clamp(32px,6vw,52px);margin:0 0 12px;background:linear-gradient(90deg,#ffbc75,#ff779c);color:transparent;background-clip:text}
+p{color:#decbdc}
+.panel,.project{background:#ffffff13;border:1px solid #ffffff30;border-radius:24px;padding:24px;margin-top:30px;box-shadow:0 18px 45px #0002}
+input{width:100%;border:1px solid #ffffff40;border-radius:12px;background:#21162f;color:white;padding:16px;font-size:15px;outline:none}
+input:focus{border-color:#ffa07b}
+button{width:100%;padding:15px;margin-top:15px;border:0;border-radius:12px;background:linear-gradient(100deg,#ffad70,#f66a99);color:#29162b;font-size:16px;font-weight:800;cursor:pointer;transition:transform .2s,filter .2s}
+button:hover{transform:translateY(-2px);filter:brightness(1.07)}
+button:disabled{opacity:.6;cursor:wait}
+.project{animation:rise .35s ease}
+img{width:210px;max-width:100%;border-radius:14px}
+h2{overflow-wrap:anywhere}
+.muted{font-size:14px}
+.error{color:#ffb6b6;white-space:pre-wrap}
+.ok{color:#b5ffdc}
+progress{width:100%;height:12px;accent-color:#ff9c79;margin-top:16px}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+[hidden]{display:none!important}
+footer{text-align:center;color:#c6afc7;font-size:12px;padding:45px 15px}
+</style>
+</head>
+<body>
+<header>☀ SOLA SCRATCH</header>
+<main>
+<h1>Scratch作品を保存しよう。</h1>
+<p>作品のURLを貼り付けるだけで、.sb3ファイルをダウンロード。</p>
+<div class="panel">
+<input id="url" placeholder="https://scratch.mit.edu/projects/123456789/" aria-label="Scratch作品URL">
+<button id="load">作品を読み込む</button>
+<p id="message" role="status" class="error"></p>
+</div>
+<section class="project" id="project" hidden>
+<img id="thumb" alt="作品のサムネイル">
+<h2 id="title"></h2><p id="author"></p>
+<button id="download">.sb3をダウンロード</button>
+<progress id="progress" max="100" hidden></progress>
+<p id="status" role="status"></p>
+<button id="retry" hidden>再試行</button>
+</section>
+</main>
+<footer>SOLA SCRATCH — Scratch公式サイトとは関係のない非公式ツールです。</footer>
+<script>
+const $=id=>document.getElementById(id);let current=null;
+async function load(){
+ const btn=$('load');btn.disabled=true;$('message').textContent='作品情報を読み込み中…';$('project').hidden=true;
+ try{
+  const r=await fetch('/api/info',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value})});
+  const d=await r.json();if(!r.ok)throw Error(d.error||'読み込みに失敗したよ。');
+  current=d;$('title').textContent=d.title;$('author').textContent='作者：'+d.author;
+  $('thumb').src=d.thumbnail;$('thumb').hidden=!d.thumbnail;$('project').hidden=false;
+  $('message').textContent='';$('status').textContent='';$('retry').hidden=true;$('progress').hidden=true;
+ }catch(e){$('message').textContent=e.message}
+ finally{btn.disabled=false}
+}
+async function download(){
+ if(!current)return;
+ const btn=$('download'),bar=$('progress');btn.disabled=true;$('retry').hidden=true;bar.hidden=false;bar.removeAttribute('value');
+ $('status').className='muted';$('status').textContent='作品ファイルを準備中…';
+ try{
+  const r=await fetch('/api/download/'+current.id);
+  if(!r.ok){let d=await r.json().catch(()=>({}));throw Error(d.error||'ダウンロードに失敗したよ。')}
+  const total=Number(r.headers.get('content-length'))||0;
+  const reader=r.body.getReader();let chunks=[],received=0;
+  while(true){
+   const {done,value}=await reader.read();if(done)break;
+   chunks.push(value);received+=value.length;
+   if(total){bar.value=Math.round(received/total*100);$('status').textContent='ダウンロード中 '+bar.value+'%'}
+   else{$('status').textContent='受信中 '+(received/1048576).toFixed(1)+' MB'}
+  }
+  const blob=new Blob(chunks,{type:'application/octet-stream'}),obj=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=obj;a.download=(current.title.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').replace(/[. ]+$/,'').slice(0,100)||'Scratch-'+current.id)+'.sb3';
+  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(obj),60000);
+  $('status').className='ok';$('status').textContent='ダウンロード完了！';bar.value=100;
+ }catch(e){$('status').className='error';$('status').textContent=e.message;$('retry').hidden=false}
+ finally{btn.disabled=false}
+}
+$('load').onclick=load;$('download').onclick=download;$('retry').onclick=download;
+$('url').addEventListener('keydown',e=>{if(e.key==='Enter')load()});
+</script>
+</body>
+</html>
